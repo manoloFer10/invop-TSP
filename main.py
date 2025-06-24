@@ -443,7 +443,7 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
 
     # Plot clientes
     for i, coord in enumerate(instancia.customer_coords):
-        client_id = i  
+        client_id = i + 1  
         color = 'blue'
         marker = 'o'
         label_suffix = ""
