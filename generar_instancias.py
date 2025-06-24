@@ -100,7 +100,7 @@ def generar_instancia(filepath, num_total_clientes, grid_length, plot=True):
     cant_clientes = num_total_clientes
 
     # 2. Costo repartidor
-    costo_repartidor = random.randint(15, 75)
+    costo_repartidor = random.randint(int(grid_length/5), int(grid_length*2/3))
 
     # Client coordinates
     client_coords_list = [] # List of (x,y) tuples, 0-indexed for internal use here
@@ -140,8 +140,8 @@ def generar_instancia(filepath, num_total_clientes, grid_length, plot=True):
     # 5. Clientes exclusivos (camión)
     num_exclusivos = 0
     if cant_clientes > 0:
-        min_e_pct = 0.05
-        max_e_pct = 0.30
+        min_e_pct = 0.2
+        max_e_pct = 0.70
         min_e = int(cant_clientes * min_e_pct)
         max_e = int(cant_clientes * max_e_pct)
         if max_e == 0 and cant_clientes > 0 and max_e_pct > 0: max_e = 1
