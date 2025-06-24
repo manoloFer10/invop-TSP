@@ -295,7 +295,6 @@ def modelo_con_bici(prob, instancia):
     constraints_data.append({'vars': vars_depot_in, 'coeffs': coeffs_depot_in, 'sense': 'E', 'rhs': 1.0, 'name': "regresa_deposito"})
 
     # Cada cliente es visitado exactamente una vez
-    # sum_i (x_i_j) + (y_i_j)  = 1 for j = 1...N
     for k in range(1, num_total_nodes): 
         # A las demás ciudades se llega en camión o bici
         vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{k}_{i}" for i in range(num_total_nodes) if i != k]
@@ -303,9 +302,10 @@ def modelo_con_bici(prob, instancia):
         constraints_data.append({'vars': vars_in, 'coeffs': coeffs_in, 'sense': 'E', 'rhs': 1.0, 'name': f"se_llega_{k}"})
 
         # A la ciudad k se llega en camión
+        # sum_i (x_i_j) = z_i for i = 1...N <==> sum_i (x_i_j) - z_i = 0
         vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k] + [f"z_{k}"]
         coeffs_out = [1.0] * (len(vars_out)-1) + [-1.0]
-        constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 1.0, 'name': f"sale_de_{k}"})
+        constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 0.0, 'name': f"sale_de_{k}"})
 
         # Si llegué a k en camión, me fui en camión
         # z_j <= sum_j(x_i_j) <=> z_j - sum_j(x_i_j) <= 0
