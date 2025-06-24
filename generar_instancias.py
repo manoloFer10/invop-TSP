@@ -9,7 +9,7 @@ random.seed(RANDOM_SEED)
 
 def manhattan_distance(p1, p2):
     """Calculates Manhattan distance between two points (tuples or lists)."""
-    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+    return int(abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]))
 
 def plot_instancia(client_coords, refrigerados_ids, exclusivos_ids, grid_length, filename="instancia_plot.png"):
     """
@@ -156,12 +156,20 @@ def generar_instancia(filepath, num_total_clientes, grid_length, plot=True):
     
     # 6. Distancias (cij) y costos de camión (dij)
     distancias_costos_lines = []
+    
+    # Define depot coordinate (e.g., center of the grid for calculation purposes)
+    # Note: The depot is node 0. Clients are 1 to N.
+    depot_coord_gen = (grid_length / 2.0, grid_length / 2.0) 
+    
+    # El costo del camión se deriva de la distancia entre clientes
+    truck_cost_multiplier = random.uniform(1.0, 3.0)
+
+
     if cant_clientes > 1:
-        truck_cost_multiplier = random.uniform(1.0, 3.0) 
-        for i in range(cant_clientes):
-            for j in range(i + 1, cant_clientes):
-                client_id_i = i + 1 
-                client_id_j = j + 1 
+        for i in range(cant_clientes): 
+            for j in range(i + 1, cant_clientes): 
+                client_id_i_file = i + 1 
+                client_id_j_file = j + 1 
                 
                 coord_i = client_coords_list[i]
                 coord_j = client_coords_list[j]
@@ -170,11 +178,36 @@ def generar_instancia(filepath, num_total_clientes, grid_length, plot=True):
                 if dist_ij == 0: dist_ij = 1 
                 
                 cost_ij = int(dist_ij * truck_cost_multiplier)
-                if cost_ij < 1: cost_ij = 1
-                
-                distancias_costos_lines.append(f"{client_id_i} {client_id_j} {dist_ij} {cost_ij}")
+                if cost_ij < 1 and dist_ij > 0: cost_ij = 1 # Minimum cost of 1 if there's distance
+                elif dist_ij == 0: cost_ij = 0
 
-    # Write to file
+                # Write as: client_id_i client_id_j distance_ij cost_ij
+                distancias_costos_lines.append(f"{client_id_i_file} {client_id_j_file} {dist_ij} {cost_ij}")
+                distancias_costos_lines.append(f"{client_id_j_file} {client_id_i_file} {dist_ij} {cost_ij}")
+
+    # --- Depot to/from client distances and costs ---
+    # Node 0 is the depot. Clients are 1-indexed in the file.
+    if cant_clientes > 0:
+        for i in range(cant_clientes): # Iterate through each client (0-indexed from client_coords_list)
+            client_id_in_file = i + 1       # 1-based client ID for the file
+            client_coord = client_coords_list[i] # Coordinates of the current client
+            
+            # Distance from depot (0) to client (cij)
+            dist_depot_client = manhattan_distance(depot_coord_gen, client_coord)
+            if dist_depot_client == 0 and depot_coord_gen == client_coord : dist_depot_client = 0 
+            elif dist_depot_client == 0 : dist_depot_client = 1 
+            
+            # Cost from depot (0) to client (dij)
+            cost_depot_client = int(dist_depot_client * truck_cost_multiplier) 
+            if cost_depot_client < 1 and dist_depot_client > 0: cost_depot_client = 1
+            elif dist_depot_client == 0 : cost_depot_client = 0
+
+            distancias_costos_lines.append(f"0 {client_id_in_file} {dist_depot_client} {cost_depot_client}")
+            if not (dist_depot_client == 0 and cost_depot_client == 0):
+                 distancias_costos_lines.append(f"{client_id_in_file} 0 {dist_depot_client} {cost_depot_client}")
+
+
+    # --- Write to file ---
     with open(filepath, 'w') as f:
         f.write(f"{cant_clientes}\n")
         f.write(f"{costo_repartidor}\n")

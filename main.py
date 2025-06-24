@@ -26,12 +26,12 @@ class InstanciaRecorridoMixto:
         self.cant_clientes = int(f.readline())
         self.costo_repartidor = int(f.readline())
         self.d_max = int(f.readline())
-        self.grid_length = int(f.readline()) # Read grid_length
+        self.grid_length = int(f.readline()) # Leo la forma de la grilla generada
 
-        # Update depot_coord based on grid_length if desired, e.g., center
+        # Leo coordenadas para plottear
         if self.grid_length > 0:
             self.depot_coord = (self.grid_length / 2.0, self.grid_length / 2.0)
-        else: # Fallback if grid_length is 0 or not sensible
+        else: 
             self.depot_coord = (0.0, 0.0)
 
 
@@ -45,20 +45,18 @@ class InstanciaRecorridoMixto:
         for _ in range(num_exclusivos):
             self.exclusivos.append(int(f.readline()))
 
-        # Read customer coordinates
-        self.customer_coords = [None] * self.cant_clientes # 0-indexed storage for N customers
+        self.customer_coords = [None] * self.cant_clientes 
         for _ in range(self.cant_clientes):
             line = f.readline().split()
-            client_id = int(line[0]) # 1-based ID
+            client_id = int(line[0]) 
             x = float(line[1])
             y = float(line[2])
             if 1 <= client_id <= self.cant_clientes:
                 self.customer_coords[client_id - 1] = (x, y)
         
-        # Initialize distancias and costos for N+1 nodes (0 for depot, 1..N for clients)
-        # Using a large value for pairs not specified, 0 for diagonal
+        # Inicializo matrices de distancias y costos
         default_large_value = 10**9 
-        num_nodes = self.cant_clientes + 1 # Total nodes including depot
+        num_nodes = self.cant_clientes + 1 
         self.distancias = [[default_large_value] * num_nodes for _ in range(num_nodes)]
         self.costos = [[default_large_value] * num_nodes for _ in range(num_nodes)]
 
@@ -66,14 +64,12 @@ class InstanciaRecorridoMixto:
             self.distancias[k][k] = 0
             self.costos[k][k] = 0
         
-        # Read distances (cij) and truck costs (dij)
-        # The file provides i, j as 1-based for customers.
-        # We store them using 0 for depot, and 1-based indices from file for customers.
+        # Leo distancias cij y costos dij
         for line in f:
             parts = line.split()
             if len(parts) == 4:
                 id_i, id_j, dist_val, cost_val = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
-                if 0 < id_i <= self.cant_clientes and 0 < id_j <= self.cant_clientes:
+                if 0 <= id_i <= self.cant_clientes and 0 <= id_j <= self.cant_clientes:
                     self.distancias[id_i][id_j] = dist_val
                     self.costos[id_i][id_j] = cost_val
 
@@ -144,25 +140,19 @@ def modelo_actual(prob, instancia):
             var_types.append(prob.variables.type.binary)
             lower_bounds.append(0.0)
             upper_bounds.append(1.0)
-            # Costos: instancia.costos[i][j] should be populated correctly.
-            # If i or j is 0 (depot), ensure these costs are meaningful.
-            # For now, we rely on leer_datos to have set them.
-            # If depot-customer costs are not in file, they might be large,
-            # or need to be calculated and put into instancia.costos[0][j] etc.
-            # For this example, let's assume costs from/to depot are based on Manhattan distance
-            # if not specified, and use a multiplier. This is a placeholder.
+
             cost_val = instancia.costos[i][j]
-            if cost_val == 10**9: 
-                coord_i = instancia.depot_coord if i == 0 else instancia.customer_coords[i-1]
-                coord_j = instancia.depot_coord if j == 0 else instancia.customer_coords[j-1]
-                if coord_i and coord_j: # Check if coords exist
-                    # Simplified cost: Manhattan distance * some factor (e.g., 1)
-                    # This is a placeholder if costs involving depot are not in the file.
-                    # The instance generator should ideally provide all necessary costs.
-                    dist = abs(coord_i[0] - coord_j[0]) + abs(coord_i[1] - coord_j[1])
-                    cost_val = dist * 1.5 # Example cost factor
-                else: # Fallback if coords are missing for some reason
-                    cost_val = 10**9 
+            # if cost_val == 10**9: 
+            #     coord_i = instancia.depot_coord if i == 0 else instancia.customer_coords[i-1]
+            #     coord_j = instancia.depot_coord if j == 0 else instancia.customer_coords[j-1]
+            #     if coord_i and coord_j: 
+            #         # Simplified cost: Manhattan distance * some factor (e.g., 1)
+            #         # This is a placeholder if costs involving depot are not in the file.
+            #         # The instance generator should ideally provide all necessary costs.
+            #         dist = abs(coord_i[0] - coord_j[0]) + abs(coord_i[1] - coord_j[1])
+            #         cost_val = dist * 1.5 # Example cost factor
+            #     else: # Fallback if coords are missing for some reason
+            #         cost_val = 10**9 
             obj_coeffs.append(cost_val)
 
 
