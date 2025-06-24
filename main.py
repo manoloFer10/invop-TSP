@@ -482,45 +482,77 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
     plt.figure(figsize=(10, 10))
 
     all_coords = [instancia.depot_coord] + instancia.customer_coords
-    
+    labels_added = set()
+
     # Plot deposito
     if instancia.depot_coord:
-        plt.scatter(instancia.depot_coord[0], instancia.depot_coord[1], c='red', marker='s', s=100, label='Depósito (0)', zorder=5)
+        plt.scatter(instancia.depot_coord[0], instancia.depot_coord[1], c='red', marker='s', s=100, label='Depósito', zorder=5)
         plt.text(instancia.depot_coord[0] + 0.1, instancia.depot_coord[1] + 0.1, "0 (D)")
+        labels_added.add('Depósito')
 
     # Plot clientes
     for i, coord in enumerate(instancia.customer_coords):
         client_id = i + 1  
-        color = 'blue'
-        marker = 'o'
-        label_suffix = ""
-
-        if instancia.refrigerados[client_id] == 1:
-            color = 'cyan'
-            label_suffix += "R"
-        if instancia.exclusivos[client_id] == 1:
-            marker = 'X' 
-            color = 'magenta' if instancia.refrigerados[client_id] == 1 else 'orange' # Corrected color logic for exclusive and refrigerated
-            label_suffix += "E"
+        is_refrigerated = instancia.refrigerados[client_id] == 1
+        is_exclusive = instancia.exclusivos[client_id] == 1
         
-        plt.scatter(coord[0], coord[1], c=color, marker=marker, s=70, label=f'Cliente {client_id} {label_suffix}' if i < 5 else None, zorder=5) # Label first few
-        plt.text(coord[0] + 0.1, coord[1] + 0.1, str(client_id))
+        current_legend_label = None
+        point_text_suffix = []
+
+        if is_refrigerated and is_exclusive:
+            color = 'magenta'
+            marker = 'X'
+            legend_category = "Cliente Refrigerado y Exclusivo"
+            if is_refrigerated: point_text_suffix.append("R")
+            if is_exclusive: point_text_suffix.append("E")
+        elif is_refrigerated:
+            color = 'cyan'
+            marker = 'o'
+            legend_category = "Cliente Refrigerado"
+            point_text_suffix.append("R")
+        elif is_exclusive:
+            color = 'orange'
+            marker = 'X'
+            legend_category = "Cliente Exclusivo"
+            point_text_suffix.append("E")
+        else: # Regular client
+            color = 'blue'
+            marker = 'o'
+            legend_category = "Cliente"
+        
+        if legend_category not in labels_added:
+            current_legend_label = legend_category
+            labels_added.add(legend_category)
+        
+        plt.scatter(coord[0], coord[1], c=color, marker=marker, s=70, label=current_legend_label, zorder=5)
+        suffix_str = ",".join(point_text_suffix)
+        plt.text(coord[0] + 0.1, coord[1] + 0.1, f"{client_id}{f' ({suffix_str})' if suffix_str else ''}")
 
     # Plot truck path
+    truck_label_added = False
     for u, v in truck_path: 
         coord_u = all_coords[u]
         coord_v = all_coords[v]
         if coord_u and coord_v:
+            label_to_use = None
+            if not truck_label_added:
+                label_to_use = 'Ruta Camión'
+                truck_label_added = True
             plt.arrow(coord_u[0], coord_u[1], coord_v[0] - coord_u[0], coord_v[1] - coord_u[1],
-                      head_width=0.2, head_length=0.3, fc='gray', ec='gray', length_includes_head=True, zorder=5, label='Truck Path' if not plt.gca().get_legend_handles_labels()[1] else None)
+                      head_width=0.2, head_length=0.3, fc='gray', ec='gray', length_includes_head=True, zorder=3, label=label_to_use)
 
     # Plot biker path
+    biker_label_added = False
     for u, v in biker_path:
         coord_u = all_coords[u]
         coord_v = all_coords[v]
         if coord_u and coord_v:
+            label_to_use = None
+            if not biker_label_added:
+                label_to_use = 'Ruta Repartidor'
+                biker_label_added = True
             plt.arrow(coord_u[0], coord_u[1], coord_v[0] - coord_u[0], coord_v[1] - coord_u[1],
-                      head_width=0.2, head_length=0.3, fc='green', ec='green', linestyle='dashed', length_includes_head=True, zorder=2, label='Biker Path' if not plt.gca().get_legend_handles_labels()[1] else None)
+                      head_width=0.2, head_length=0.3, fc='green', ec='green', linestyle='dashed', length_includes_head=True, zorder=2, label=label_to_use)
 
 
     plt.title("Ruta de la Solución")
@@ -531,7 +563,13 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
         plt.ylim(-1, instancia.grid_length + 1)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True)
-    plt.legend() 
+    
+    # Filter out None labels before creating legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles)) # Remove duplicate labels if any, keeping the first instance
+    if by_label: # Check if there's anything to show in the legend
+        plt.legend(by_label.values(), by_label.keys())
+
     plt.savefig(filename)
     print(f"Gráfico de la solución guardado en: {filename}")
     plt.show()
@@ -549,7 +587,6 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
     ]
 
     if solution_status in plotworthy_statuses: 
-        
         solution_values = prob.solution.get_values()
         variable_names = prob.variables.get_names()
         
