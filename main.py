@@ -10,13 +10,13 @@ class InstanciaRecorridoMixto:
         self.cant_clientes = 0
         self.costo_repartidor = 0
         self.d_max = 0
-        self.grid_length = 0 # New
+        self.grid_length = 0 #exclusivo para plotteo
         self.refrigerados = []
         self.exclusivos = []
-        self.customer_coords = [] # New: list of (x,y) for customers 1 to N
-        self.depot_coord = (0,0) # Default, can be updated after reading grid_length
+        self.customer_coords = []  #exclusivo para plotteo
+        self.depot_coord = (0,0)  #exclusivo para plotteo
         
-        # For distancias and costos, indices will be 0 for depot, 1 to N for clients
+        # los indices son 0 para el deposito y 1...N para los clientes
         self.distancias = []        
         self.costos = []        
 
@@ -142,28 +142,16 @@ def modelo_actual(prob, instancia):
             upper_bounds.append(1.0)
 
             cost_val = instancia.costos[i][j]
-            # if cost_val == 10**9: 
-            #     coord_i = instancia.depot_coord if i == 0 else instancia.customer_coords[i-1]
-            #     coord_j = instancia.depot_coord if j == 0 else instancia.customer_coords[j-1]
-            #     if coord_i and coord_j: 
-            #         # Simplified cost: Manhattan distance * some factor (e.g., 1)
-            #         # This is a placeholder if costs involving depot are not in the file.
-            #         # The instance generator should ideally provide all necessary costs.
-            #         dist = abs(coord_i[0] - coord_j[0]) + abs(coord_i[1] - coord_j[1])
-            #         cost_val = dist * 1.5 # Example cost factor
-            #     else: # Fallback if coords are missing for some reason
-            #         cost_val = 10**9 
             obj_coeffs.append(cost_val)
 
 
     # u_i variables 
-    for i in range(1, num_total_nodes): # u_i for i = 1, ..., N
+    for i in range(1, num_total_nodes): 
         var_names.append(f"u_{i}")
-        var_types.append(prob.variables.type.continuous) # Or integer if capacity is integer
+        var_types.append(prob.variables.type.continuous) 
         lower_bounds.append(0.0)
-        # Upper bound for u_i can be N (number of customers) or Q (capacity) depending on MTZ variant
         upper_bounds.append(float(instancia.cant_clientes)) 
-        obj_coeffs.append(0.0) # u_i are not in the objective
+        obj_coeffs.append(0.0) # u_i no están en la f obj
 
     agregar_variables(prob, var_names, var_types, lower_bounds, upper_bounds, obj_coeffs)    
 
@@ -174,7 +162,7 @@ def modelo_actual(prob, instancia):
     # Cada cliente es visitado exactamente una vez
     # sum_j (x_i_j) = 1 for i = 1...N
     # sum_i (x_i_j) = 1 for j = 1...N
-    for k in range(1, num_total_nodes): # For each customer k (node 1 to N)
+    for k in range(1, num_total_nodes): 
         # Entra al cliente k
         vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k]
         coeffs_in = [1.0] * len(vars_in)
@@ -239,8 +227,8 @@ def armar_lp(prob, instancia):
     # Escribir el lp a archivo
     prob.write('recorridoMixto.lp')
 
-def resolver_lp(prob, objective_sense='minimize'): # TSP is usually minimize
-    prob.objective.set_sense(prob.objective.sense.minimize) # Set sense here
+def resolver_lp(prob): 
+    prob.objective.set_sense(prob.objective.sense.minimize) 
 
     print("Solving the problem...")
     try:
@@ -259,14 +247,14 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
 
     all_coords = [instancia.depot_coord] + instancia.customer_coords
     
-    # Plot depot
+    # Plot deposito
     if instancia.depot_coord:
         plt.scatter(instancia.depot_coord[0], instancia.depot_coord[1], c='red', marker='s', s=100, label='Depósito (0)', zorder=5)
         plt.text(instancia.depot_coord[0] + 0.1, instancia.depot_coord[1] + 0.1, "0 (D)")
 
-    # Plot customers
+    # Plot clientes
     for i, coord in enumerate(instancia.customer_coords):
-        client_id = i + 1 # 1-based ID
+        client_id = i + 1 
         color = 'blue'
         marker = 'o'
         label_suffix = ""
@@ -275,15 +263,15 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
             color = 'cyan'
             label_suffix += "R"
         if client_id in instancia.exclusivos:
-            marker = 'X' # Exclusive might override color or be combined
+            marker = 'X' 
             color = 'magenta' if client_id in instancia.refrigerados else 'orange'
             label_suffix += "E"
         
         plt.scatter(coord[0], coord[1], c=color, marker=marker, s=70, label=f'Cliente {client_id} {label_suffix}' if i < 5 else None, zorder=5) # Label first few
         plt.text(coord[0] + 0.1, coord[1] + 0.1, str(client_id))
 
-    # Plot solution path
-    for u, v in solution_path: # u, v are 0-indexed node IDs
+    # Plot camino de la solucion
+    for u, v in solution_path: 
         coord_u = all_coords[u]
         coord_v = all_coords[v]
         if coord_u and coord_v:
@@ -298,17 +286,17 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
         plt.ylim(-1, instancia.grid_length + 1)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True)
-    # plt.legend() # Can get crowded, enable if needed
+    plt.legend() # Can get crowded, enable if needed
     plt.savefig(filename)
     print(f"Gráfico de la solución guardado en: {filename}")
-    # plt.show()
+    plt.show()
 
 
 def mostrar_solucion(prob, instancia, tolerance=1e-6):
     if prob.solution.get_status() in [prob.solution.status.optimal, 
                                       prob.solution.status.optimal_tolerance,
                                       prob.solution.status.MIP_optimal,
-                                      prob.solution.status.optimal_infeasible]: # Added for cases where it finds a solution but might be 'optimal_infeasible'
+                                      prob.solution.status.optimal_infeasible]: 
         
         solution_values = prob.solution.get_values()
         variable_names = prob.variables.get_names()
@@ -323,7 +311,6 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
         for i in range(len(variable_names)):
             if solution_values[i] > tolerance:
                 print(f"  {variable_names[i]} = {solution_values[i]}")
-                # Check if it's an x_i_j variable
                 if variable_names[i].startswith("x_"):
                     try:
                         parts = variable_names[i].split('_')
@@ -357,7 +344,7 @@ def main():
     
     armar_lp(prob,instancia)
 
-    resolver_lp(prob) # TSP is usually minimize, sense set in resolver_lp or armar_lp
+    resolver_lp(prob) 
 
     mostrar_solucion(prob,instancia)
 
