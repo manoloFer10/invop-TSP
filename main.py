@@ -1,7 +1,6 @@
 import sys
 import cplex
-import matplotlib.pyplot as plt # For plotting solution
-import math # For depot calculation if needed
+import matplotlib.pyplot as plt 
 
 TOLERANCE =10e-6 
 
@@ -36,14 +35,24 @@ class InstanciaRecorridoMixto:
 
 
         num_refrigerados = int(f.readline())
-        self.refrigerados = []
-        for _ in range(num_refrigerados):
-            self.refrigerados.append(int(f.readline()))
+        if num_refrigerados > 0:
+            self.refrigerados = [0] * num_refrigerados
+            for _ in range(num_refrigerados):
+                refrigerado_id = int(f.readline())
+                self.refrigerados[refrigerado_id] = 1 # Indico que el cliente es refrigerado
+        else:
+            print("No hay clientes refrigerados.")
+            self.refrigerados = []
 
         num_exclusivos = int(f.readline())
-        self.exclusivos = []
-        for _ in range(num_exclusivos):
-            self.exclusivos.append(int(f.readline()))
+        if num_exclusivos > 0:
+            self.exclusivos = [0] * (self.cant_clientes + 1)
+            for _ in range(num_exclusivos):
+                exclusivo_id= int(f.readline())
+                self.exclusivos[exclusivo_id] = 1 # Indico que el cliente es exclusivo
+        else:
+            print("No hay clientes exclusivos.")
+            self.exclusivos = []
 
         self.customer_coords = [None] * self.cant_clientes 
         for _ in range(self.cant_clientes):
@@ -146,9 +155,9 @@ def modelo_actual(prob, instancia):
 
 
     # u_i variables 
-    for i in range(1, num_total_nodes): 
+    for i in range(0, num_total_nodes): 
         var_names.append(f"u_{i}")
-        var_types.append(prob.variables.type.continuous) 
+        var_types.append(prob.variables.type.integer) 
         lower_bounds.append(0.0)
         upper_bounds.append(float(instancia.cant_clientes)) 
         obj_coeffs.append(0.0) # u_i no están en la f obj
@@ -172,6 +181,12 @@ def modelo_actual(prob, instancia):
         vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k]
         coeffs_out = [1.0] * len(vars_out)
         constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 1.0, 'name': f"sale_de_{k}"})
+
+    # Se empieza en el depósito
+    # u_0 = 0
+    # vars_depot_start = [f"u_0"]
+    # coeffs_depot_start = [1.0]
+    # constraints_data.append({'vars': vars_depot_start, 'coeffs': coeffs_depot_start, 'sense': 'E', 'rhs': 0.0, 'name': "inicio_deposito"})
 
     # El camion sale del deposito
     # sum_j (x_0_j) = 1 (para j=1..N)
@@ -201,15 +216,161 @@ def modelo_actual(prob, instancia):
 
 
 def modelo_con_bici(prob, instancia):
-    ...
+    # Variables ============================================================================================================
+    # Las defino
+    var_names = []
+    var_types = []
+    lower_bounds = []
+    upper_bounds = []
+    obj_coeffs = []
 
+    num_total_nodes = instancia.cant_clientes + 1 # Depósito (0) + N clientes
+
+    for i in range(num_total_nodes):
+        for j in range(num_total_nodes):
+            if i == j:
+                continue
+            # x_i_j variables
+            var_names.append(f"x_{i}_{j}")
+            var_types.append(prob.variables.type.binary)
+            lower_bounds.append(0.0)
+            upper_bounds.append(1.0)
+            cost_val = instancia.costos[i][j]
+            obj_coeffs.append(cost_val)
+
+            # y_i_j variables
+            var_names.append(f"y_{i}_{j}")
+            var_types.append(prob.variables.type.binary)
+            lower_bounds.append(0.0)
+            upper_bounds.append(1.0)
+            cost_val = instancia.costo_repartidor
+            obj_coeffs.append(cost_val)
+
+    for i in range(1, num_total_nodes): 
+        # u_i variables 
+        var_names.append(f"u_{i}")
+        var_types.append(prob.variables.type.integer) 
+        lower_bounds.append(0.0)
+        upper_bounds.append(int(instancia.cant_clientes)) 
+        obj_coeffs.append(0.0) # u_i no están en la f obj
+
+        # z_i variables 
+        var_names.append(f"z_{i}")
+        var_types.append(prob.variables.type.binary) 
+        lower_bounds.append(0.0)
+        upper_bounds.append(1.0) 
+        obj_coeffs.append(0.0) # z_i no están en la f obj
+
+        # r_i variables 
+        var_names.append(f"r_{i}")
+        var_types.append(prob.variables.type.integer) 
+        lower_bounds.append(0.0)
+        upper_bounds.append(1.0) 
+        obj_coeffs.append(0.0) # z_i no están en la f obj
+
+    agregar_variables(prob, var_names, var_types, lower_bounds, upper_bounds, obj_coeffs)    
+
+
+    # Restricciones ============================================================================================================
+    constraints_data = []
+
+    # Se empieza en el depósito
+    # u_0 = 0
+    vars_depot_start = [f"u_0"]
+    coeffs_depot_start = [1.0]
+    constraints_data.append({'vars': vars_depot_start, 'coeffs': coeffs_depot_start, 'sense': 'E', 'rhs': 0.0, 'name': "inicio_deposito"})
+
+    # Se sale en camión del depósito
+    # sum_j (x_0_j) = 1 (para j=1..N)
+    vars_depot_out = [f"x_0_{j}" for j in range(1, num_total_nodes)]
+    coeffs_depot_out = [1.0] * len(vars_depot_out)
+    constraints_data.append({'vars': vars_depot_out, 'coeffs': coeffs_depot_out, 'sense': 'E', 'rhs': 1.0, 'name': "sale_deposito"})
+    
+    # Se llega al depo en camión
+    # sum_i (x_i_0) = 1 (para i=1..N)
+    vars_depot_in = [f"x_{i}_0" for i in range(1, num_total_nodes)]
+    coeffs_depot_in = [1.0] * len(vars_depot_in)
+    constraints_data.append({'vars': vars_depot_in, 'coeffs': coeffs_depot_in, 'sense': 'E', 'rhs': 1.0, 'name': "regresa_deposito"})
+
+    # Cada cliente es visitado exactamente una vez
+    # sum_i (x_i_j) + (y_i_j)  = 1 for j = 1...N
+    for k in range(1, num_total_nodes): 
+        # A las demás ciudades se llega en camión o bici
+        vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{k}_{i}" for i in range(num_total_nodes) if i != k]
+        coeffs_in = [1.0] * 2 * (len(vars_in) -1)
+        constraints_data.append({'vars': vars_in, 'coeffs': coeffs_in, 'sense': 'E', 'rhs': 1.0, 'name': f"se_llega_{k}"})
+
+        # A la ciudad k se llega en camión
+        vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k] + f"z_{k}"
+        coeffs_out = [1.0] * (len(vars_out)-1) + [-1.0]
+        constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 1.0, 'name': f"sale_de_{k}"})
+
+        # Si llegué a k en camión, me fui en camión
+        # z_j <= sum_j(x_i_j) <=> z_j - sum_j(x_i_j) <= 0
+        vars_camion_inout = [f'z{k}'] + [f"x_{k}_{i}" for i in range(num_total_nodes) if i != k]
+        coeffs_camion_inout = [1.0] + [-1.0] * (len(vars_camion_inout)-1)
+        constraints_data.append({'vars': vars_camion_inout, 'coeffs': coeffs_camion_inout, 'sense': 'L', 'rhs': 0.0, 'name': f"camion_inout_{k}"})
+
+        #Se sale una vez de las ciudades, a lo sumo
+        # sum_j (x_i_j) <= 1 for i = 1...N
+        vars_out_once = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k]
+        coeffs_out_once = [1.0] * len(vars_out_once)
+        constraints_data.append({'vars': vars_out_once, 'coeffs': coeffs_out_once, 'sense': 'L', 'rhs': 1.0, 'name': f"sale_una_vez_de_{k}"})
+
+        # y_i_j puede activarse si está a distancia permitida
+        # c_i_j * y_i_j <= d_max
+        for j in range(num_total_nodes):
+            if i == j or instancia.distancias[i][j] > instancia.d_max: # no puedo ir en bici si la distancia es mayor a d_max
+                continue
+            vars_y = [f"y_{i}_{j}"]
+            coeffs_y = [instancia.distancias[i][j]]
+            constraints_data.append({'vars': vars_y, 'coeffs': coeffs_y, 'sense': 'L', 'rhs': instancia.d_max, 'name': f"distancia_permitida_{i}_{j}"})
+
+        # la cant de repartidores en i es mayor a la cantidad de refrigerados
+        # sum_j(refrigerados_j * y_i_j) <= r_i  <==> sum_j(refrigerados_j * y_i_j) - r_i <= 0 
+        vars_refrigerados = [f"y_{k}_{j}" for j in range(num_total_nodes) if j != i] + [f'r_{k}']
+        coeffs_refrigerados = [instancia.refrigerados[j] for j in range(num_total_nodes) if j != i] + [-1.0] # == 0 si j es refrigerado, lista de booleanos
+        constraints_data.append({'vars': vars_refrigerados, 'coeffs': coeffs_refrigerados, 'sense': 'L', 'rhs': 0.0, 'name': f"refrigerados_{k}"})
+
+        # Cota para los repartidores
+        # r_i <= sum_j(y_i_j) <==> r_i - sum_j(y_i_j) <= 0
+        vars_repartidores = [f"r_{k}"] + [f"y_{k}_{j}" for j in range(num_total_nodes) if j != k]
+        coeffs_repartidores = [1.0] + [-1.0] * (len(vars_repartidores)-1)
+        constraints_data.append({'vars': vars_repartidores, 'coeffs': coeffs_repartidores, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_{k}"})
+
+        # Si hay un reparto desde i, la cantidad de repartidores desde i siempre es >0
+        # y_i_j <= r_i <==> y_i_j - r_i <= 0
+        for j in range(num_total_nodes):
+            if i == j:
+                continue
+            vars_repartidores_min = [f"y_{k}_{j}"] + [f"r_{k}"] 
+            coeffs_repartidores_min = [1.0] + [-1.0]
+            constraints_data.append({'vars': vars_repartidores_min, 'coeffs': coeffs_repartidores_min, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_min_{k}"})
+
+    # Restricciones MTZ: u_i - u_j + N * x_i_j <= N - 1  (for i,j = 1...N, i!=j)
+    N_val = float(instancia.cant_clientes)
+    for i in range(1, num_total_nodes): 
+        for j in range(1, num_total_nodes): 
+            if i == j:
+                continue
+            # u_i - u_j + N * x_i_j <= N - 1
+            vars_mtz = [f"u_{i}", f"u_{j}", f"x_{i}_{j}"]
+            coeffs_mtz = [1.0, -1.0, N_val]
+            constraints_data.append({'vars': vars_mtz, 'coeffs': coeffs_mtz, 'sense': 'L', 'rhs': N_val - 1.0, 'name': f"mtz_{i}_{j}"})
+            
+    #Agrego las restricciones
+    agregar_restricciones(prob, constraints_data)
+
+
+def modelo_con_bici_deseables(prob, instancia):
+    ...
 
 def armar_lp(prob, instancia):
 
     escenarios = {
         'actual': modelo_actual,
         'bici': modelo_con_bici,
-        #'bici_restricciones': modelo_con_bici_restricciones
+        'bici_deseables': modelo_con_bici_deseables
     }
 
     escenario_elegido = sys.argv[2].strip() 
@@ -309,8 +470,8 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
         num_total_nodes = instancia.cant_clientes + 1
 
         for i in range(len(variable_names)):
-            if solution_values[i] > tolerance:
-                print(f"  {variable_names[i]} = {solution_values[i]}")
+            if solution_values[i] > tolerance or variable_names[i].startswith("u_"):
+                print(f"  {variable_names[i]} = {solution_values[i] if variable_names[i].startswith('x_') else solution_values[i]+1 }")
                 if variable_names[i].startswith("x_"):
                     try:
                         parts = variable_names[i].split('_')
