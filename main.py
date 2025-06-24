@@ -35,24 +35,23 @@ class InstanciaRecorridoMixto:
 
 
         num_refrigerados = int(f.readline())
+        self.refrigerados = [0] * (self.cant_clientes + 1)
         if num_refrigerados > 0:
-            self.refrigerados = [0] * num_refrigerados
             for _ in range(num_refrigerados):
                 refrigerado_id = int(f.readline())
                 self.refrigerados[refrigerado_id] = 1 # Indico que el cliente es refrigerado
         else:
             print("No hay clientes refrigerados.")
-            self.refrigerados = []
 
         num_exclusivos = int(f.readline())
+        self.exclusivos = [0] * (self.cant_clientes + 1)
+
         if num_exclusivos > 0:
-            self.exclusivos = [0] * (self.cant_clientes + 1)
             for _ in range(num_exclusivos):
                 exclusivo_id= int(f.readline())
                 self.exclusivos[exclusivo_id] = 1 # Indico que el cliente es exclusivo
         else:
             print("No hay clientes exclusivos.")
-            self.exclusivos = []
 
         self.customer_coords = [None] * self.cant_clientes 
         for _ in range(self.cant_clientes):
@@ -246,14 +245,16 @@ def modelo_con_bici(prob, instancia):
             cost_val = instancia.costo_repartidor
             obj_coeffs.append(cost_val)
 
-    for i in range(1, num_total_nodes): 
+    for i in range(0, num_total_nodes): 
         # u_i variables 
         var_names.append(f"u_{i}")
         var_types.append(prob.variables.type.integer) 
         lower_bounds.append(0.0)
         upper_bounds.append(int(instancia.cant_clientes)) 
         obj_coeffs.append(0.0) # u_i no están en la f obj
-
+        
+        if i == 0: continue
+    
         # z_i variables 
         var_names.append(f"z_{i}")
         var_types.append(prob.variables.type.binary) 
@@ -274,6 +275,7 @@ def modelo_con_bici(prob, instancia):
     # Restricciones ============================================================================================================
     constraints_data = []
 
+    #TODO: esto mejora el modelo?
     # Se empieza en el depósito
     # u_0 = 0
     vars_depot_start = [f"u_0"]
@@ -297,17 +299,17 @@ def modelo_con_bici(prob, instancia):
     for k in range(1, num_total_nodes): 
         # A las demás ciudades se llega en camión o bici
         vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{k}_{i}" for i in range(num_total_nodes) if i != k]
-        coeffs_in = [1.0] * 2 * (len(vars_in) -1)
+        coeffs_in = [1.0] * len(vars_in) 
         constraints_data.append({'vars': vars_in, 'coeffs': coeffs_in, 'sense': 'E', 'rhs': 1.0, 'name': f"se_llega_{k}"})
 
         # A la ciudad k se llega en camión
-        vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k] + f"z_{k}"
+        vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k] + [f"z_{k}"]
         coeffs_out = [1.0] * (len(vars_out)-1) + [-1.0]
         constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 1.0, 'name': f"sale_de_{k}"})
 
         # Si llegué a k en camión, me fui en camión
         # z_j <= sum_j(x_i_j) <=> z_j - sum_j(x_i_j) <= 0
-        vars_camion_inout = [f'z{k}'] + [f"x_{k}_{i}" for i in range(num_total_nodes) if i != k]
+        vars_camion_inout = [f'z_{k}'] + [f"x_{k}_{i}" for i in range(num_total_nodes) if i != k]
         coeffs_camion_inout = [1.0] + [-1.0] * (len(vars_camion_inout)-1)
         constraints_data.append({'vars': vars_camion_inout, 'coeffs': coeffs_camion_inout, 'sense': 'L', 'rhs': 0.0, 'name': f"camion_inout_{k}"})
 
@@ -320,16 +322,16 @@ def modelo_con_bici(prob, instancia):
         # y_i_j puede activarse si está a distancia permitida
         # c_i_j * y_i_j <= d_max
         for j in range(num_total_nodes):
-            if i == j or instancia.distancias[i][j] > instancia.d_max: # no puedo ir en bici si la distancia es mayor a d_max
+            if k == j or instancia.distancias[k][j] > instancia.d_max: # no puedo ir en bici si la distancia es mayor a d_max
                 continue
-            vars_y = [f"y_{i}_{j}"]
-            coeffs_y = [instancia.distancias[i][j]]
+            vars_y = [f"y_{k}_{j}"]
+            coeffs_y = [instancia.distancias[k][j]]
             constraints_data.append({'vars': vars_y, 'coeffs': coeffs_y, 'sense': 'L', 'rhs': instancia.d_max, 'name': f"distancia_permitida_{i}_{j}"})
 
         # la cant de repartidores en i es mayor a la cantidad de refrigerados
         # sum_j(refrigerados_j * y_i_j) <= r_i  <==> sum_j(refrigerados_j * y_i_j) - r_i <= 0 
-        vars_refrigerados = [f"y_{k}_{j}" for j in range(num_total_nodes) if j != i] + [f'r_{k}']
-        coeffs_refrigerados = [instancia.refrigerados[j] for j in range(num_total_nodes) if j != i] + [-1.0] # == 0 si j es refrigerado, lista de booleanos
+        vars_refrigerados = [f"y_{k}_{j}" for j in range(num_total_nodes) if j != k] + [f'r_{k}']
+        coeffs_refrigerados = [instancia.refrigerados[j] for j in range(num_total_nodes) if j != k] + [-1.0] # == 0 si j es refrigerado, lista de booleanos
         constraints_data.append({'vars': vars_refrigerados, 'coeffs': coeffs_refrigerados, 'sense': 'L', 'rhs': 0.0, 'name': f"refrigerados_{k}"})
 
         # Cota para los repartidores
@@ -341,23 +343,35 @@ def modelo_con_bici(prob, instancia):
         # Si hay un reparto desde i, la cantidad de repartidores desde i siempre es >0
         # y_i_j <= r_i <==> y_i_j - r_i <= 0
         for j in range(num_total_nodes):
-            if i == j:
+            if k == j:
                 continue
             vars_repartidores_min = [f"y_{k}_{j}"] + [f"r_{k}"] 
             coeffs_repartidores_min = [1.0] + [-1.0]
             constraints_data.append({'vars': vars_repartidores_min, 'coeffs': coeffs_repartidores_min, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_min_{k}"})
 
-    # Restricciones MTZ: u_i - u_j + N * x_i_j <= N - 1  (for i,j = 1...N, i!=j)
-    N_val = float(instancia.cant_clientes)
+    # Restricciones MTZ:
     for i in range(1, num_total_nodes): 
+        # Se activa la pos del cliente i solo si pasa el camión
+        # z_i <= u_i <= (n-1)*z_i  <=> z_i - u_i <= 0 y (n-1)*z_i - u_i >= 0
+        vars_z_u = [f"z_{i}", f"u_{i}"]
+        coeffs_z_u = [1.0, -1.0]
+        constraints_data.append({'vars': vars_z_u, 'coeffs': coeffs_z_u, 'sense': 'L', 'rhs': 0.0, 'name': f"z_u_{i}"})
+        coeffs_z_u_mtz = [int(instancia.cant_clientes - 1), -1.0]
+        constraints_data.append({'vars': vars_z_u, 'coeffs': coeffs_z_u_mtz, 'sense': 'G', 'rhs': 0.0, 'name': f"z_u_mtz_{i}"})
+
+        # Se activa la restricción del orden de caminos si el camión pasa por las dos ciudades
+        # u_i - u_j + (n-1)*x_i_j <= n-2 + (n-1)(1-z_i) + (n-1)(1-z_j)
+        # <==> u_i - u_j + (n-1)*x_i_j - (n-2 + (n-1)(1-z_i) + (n-1)(1-z_j)) <= 0
+        # <==> u_i - u_j + (n-1)*x_i_j - (n-1)(1-z_i) - (n-1)(1-z_j) <= n-2
+        # <==> u_i - u_j + (n-1)*x_i_j + (n-1)*z_i + (n-1)*z_j <= 3n-5
         for j in range(1, num_total_nodes): 
             if i == j:
                 continue
-            # u_i - u_j + N * x_i_j <= N - 1
-            vars_mtz = [f"u_{i}", f"u_{j}", f"x_{i}_{j}"]
-            coeffs_mtz = [1.0, -1.0, N_val]
-            constraints_data.append({'vars': vars_mtz, 'coeffs': coeffs_mtz, 'sense': 'L', 'rhs': N_val - 1.0, 'name': f"mtz_{i}_{j}"})
-            
+            vars_mtz = [f"u_{i}", f"u_{j}", f"x_{i}_{j}", f"z_{i}", f"z_{j}"]
+            coef_mtz = [1.0, -1.0, int(instancia.cant_clientes - 1), int(instancia.cant_clientes - 1), int(instancia.cant_clientes - 1)]
+            constraints_data.append({'vars': vars_mtz, 'coeffs': coef_mtz, 'sense': 'L', 'rhs': 3 * instancia.cant_clientes - 5, 'name': f"mtz_{i}_{j}"})
+
+                        
     #Agrego las restricciones
     agregar_restricciones(prob, constraints_data)
 
