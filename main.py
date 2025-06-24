@@ -23,7 +23,7 @@ class InstanciaRecorridoMixto:
         f = open(filename)
 
         self.cant_clientes = int(f.readline())
-        self.costo_repartidor = int(f.readline())
+        self.costo_repartidor = float(f.readline())
         self.d_max = int(f.readline())
         self.grid_length = int(f.readline()) # Leo la forma de la grilla generada
 
@@ -260,7 +260,7 @@ def modelo_con_bici(prob, instancia):
         upper_bounds.append(instancia.cant_clientes) 
         obj_coeffs.append(0.0) # r_i no están en la f obj
 
-        if i == 0: continue
+        if i ==0 : continue
 
         # z_i variables 
         var_names.append(f"z_{i}")
@@ -277,7 +277,6 @@ def modelo_con_bici(prob, instancia):
     # Restricciones ============================================================================================================
     constraints_data = []
 
-    #TODO: esto mejora el modelo?
     # Se empieza en el depósito
     # u_0 = 0
     vars_depot_start = [f"u_0"]
@@ -296,7 +295,6 @@ def modelo_con_bici(prob, instancia):
     coeffs_depot_in = [1.0] * len(vars_depot_in)
     constraints_data.append({'vars': vars_depot_in, 'coeffs': coeffs_depot_in, 'sense': 'E', 'rhs': 1.0, 'name': "regresa_deposito"})
 
-    # Cada cliente es visitado exactamente una vez
     for k in range(1, num_total_nodes): 
         # A las demás ciudades se llega en camión o bici
         vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{i}_{k}" for i in range(num_total_nodes) if i != k]
@@ -321,18 +319,8 @@ def modelo_con_bici(prob, instancia):
         coeffs_out_once = [1.0] * len(vars_out_once)
         constraints_data.append({'vars': vars_out_once, 'coeffs': coeffs_out_once, 'sense': 'L', 'rhs': 1.0, 'name': f"sale_una_vez_de_{k}"})
 
-        # y_i_j puede activarse si está a distancia permitida
-        # c_i_j * y_i_j <= d_max
-        for j in range(num_total_nodes):
-            if j != 0 and j != k: # No se permite el reparto al depósito ni se reparten a sí mismos
-                constraints_data.append({
-                    'vars': [f"y_{k}_{j}"],
-                    'coeffs': [float(instancia.distancias[k][j])],
-                    'sense': 'L',
-                    'rhs': float(instancia.d_max),
-                    'name': f"distancia_perm_y_{k}_{j}"
-                })
 
+    for k in range(num_total_nodes):
         # la cant de repartidores en i es mayor a la cantidad de refrigerados
         # sum_j(refrigerados_j * y_i_j) <= r_i  <==> sum_j(refrigerados_j * y_i_j) - r_i <= 0 
         vars_refrigerados = [f"y_{k}_{j}" for j in range(num_total_nodes) if j != k] + [f'r_{k}']
@@ -345,14 +333,36 @@ def modelo_con_bici(prob, instancia):
         coeffs_repartidores = [1.0] + [-1.0] * (len(vars_repartidores)-1)
         constraints_data.append({'vars': vars_repartidores, 'coeffs': coeffs_repartidores, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_{k}"})
 
-        # Si hay un reparto desde i, la cantidad de repartidores desde i siempre es >0
-        # y_i_j <= r_i <==> y_i_j - r_i <= 0
+        # y_i_j puede activarse si está a distancia permitida
+        # c_i_j * y_i_j <= d_max
+        for j in range(num_total_nodes):
+            if j != 0 and j != k: # No se permite el reparto al depósito ni se reparten a sí mismos
+                constraints_data.append({
+                    'vars': [f"y_{k}_{j}"],
+                    'coeffs': [float(instancia.distancias[k][j])],
+                    'sense': 'L',
+                    'rhs': float(instancia.d_max),
+                    'name': f"distancia_perm_y_{k}_{j}"
+                })
+
         for j in range(num_total_nodes):
             if k == j:
                 continue
+            # Si hay un reparto desde i, la cantidad de repartidores desde i siempre es >0
+            # y_i_j <= r_i <==> y_i_j - r_i <= 0
             vars_repartidores_min = [f"y_{k}_{j}"] + [f"r_{k}"] 
             coeffs_repartidores_min = [1.0] + [-1.0]
             constraints_data.append({'vars': vars_repartidores_min, 'coeffs': coeffs_repartidores_min, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_min_{k}"})
+
+    for i in range(1, num_total_nodes):
+        for j in range(1, num_total_nodes):
+            if i == j: 
+                continue
+            # (Un repartidor sale de i entonces el camión paró en i)
+            # y_i_j <= z_i <==> y_i_j - z_i <= 0
+            vars_repartidores_min = [f"y_{i}_{j}"] + [f"z_{i}"] 
+            coeffs_repartidores_min = [1.0] + [-1.0]
+            constraints_data.append({'vars': vars_repartidores_min, 'coeffs': coeffs_repartidores_min, 'sense': 'L', 'rhs': 0.0, 'name': f"repartidores_min_{i}_{j}"})
 
     # Restricciones MTZ:
     for i in range(1, num_total_nodes): 
@@ -368,28 +378,65 @@ def modelo_con_bici(prob, instancia):
         # u_i - u_j + (n-1)*x_i_j <= n-2 + (n-1)(1-z_i) + (n-1)(1-z_j)
         # <==> u_i - u_j + (n-1)*x_i_j - (n-2 + (n-1)(1-z_i) + (n-1)(1-z_j)) <= 0
         # <==> u_i - u_j + (n-1)*x_i_j - (n-1)(1-z_i) - (n-1)(1-z_j) <= n-2
-        # <==> u_i - u_j + (n-1)*x_i_j + (n-1)*z_i + (n-1)*z_j <= 3n-5
+        # <==> u_i - u_j + (n-1)*x_i_j + (n-1)*z_i + (n-1)*z_j <= 3n-4
         for j in range(1, num_total_nodes): 
             if i == j:
                 continue
             vars_mtz = [f"u_{i}", f"u_{j}", f"x_{i}_{j}", f"z_{i}", f"z_{j}"]
             coef_mtz = [1.0, -1.0, int(num_total_nodes - 1), int(num_total_nodes - 1), int(num_total_nodes - 1)]
-            constraints_data.append({'vars': vars_mtz, 'coeffs': coef_mtz, 'sense': 'L', 'rhs': 3 * num_total_nodes - 1 - 1, 'name': f"mtz_{i}_{j}"})
+            constraints_data.append({'vars': vars_mtz, 'coeffs': coef_mtz, 'sense': 'L', 'rhs': 3 * num_total_nodes - 4, 'name': f"mtz_{i}_{j}"})
 
                         
     #Agrego las restricciones
     agregar_restricciones(prob, constraints_data)
 
 
-def modelo_con_bici_deseables(prob, instancia):
-    ...
+def modelo_con_bici_entregas(prob, instancia):
+
+    num_total_nodes = instancia.cant_clientes + 1 # Depósito (0) + N clientes
+
+    #Instanciamos del anterior modelo
+    modelo_con_bici(prob, instancia)
+
+    #Agrego restricciones adicionales para el modelo de entregas
+    constraints_data = []
+    
+    # Al menos cuatro entregas
+    # r_i <= 4sum_i(y_i_j) <=> r_i - 4sum_i(y_i_j) <= 0
+    for i in range(num_total_nodes):
+        vars_entregas = [f"r_{i}"] + [f"y_{i}_{j}" for j in range(num_total_nodes) if j != i]
+        coeffs_entregas = [1.0] + [-4.0] * (len(vars_entregas) - 1)
+        constraints_data.append({'vars': vars_entregas, 'coeffs': coeffs_entregas, 'sense': 'L', 'rhs': 0.0, 'name': f"entregas_min_{i}"})
+
+    agregar_restricciones(prob, constraints_data)
+
+def modelo_con_bici_si_o_si(prob, instancia):
+
+    num_total_nodes = instancia.cant_clientes + 1 # Depósito (0) + N clientes
+
+    #Instanciamos del anterior modelo
+    modelo_con_bici_entregas(prob, instancia)
+
+    #Agrego restricciones adicionales para el modelo de entregas
+    constraints_data = []
+    
+    # Exclusivos
+    # z_j = 1 si instancia.exclusivos[j] == 1
+    for i in range(1, num_total_nodes):
+        if instancia.exclusivos[i] == 1:
+            vars_exclusivo = [f"z_{i}"]
+            coeffs_exclusivo = [1.0]
+            constraints_data.append({'vars': vars_exclusivo, 'coeffs': coeffs_exclusivo, 'sense': 'E', 'rhs': 1.0, 'name': f"exclusivo_{i}"})
+
+    agregar_restricciones(prob, constraints_data)
 
 def armar_lp(prob, instancia):
 
     escenarios = {
         'actual': modelo_actual,
         'bici': modelo_con_bici,
-        'bici_deseables': modelo_con_bici_deseables
+        'entregas': modelo_con_bici_entregas,
+        'si_o_si': modelo_con_bici_si_o_si,
     }
 
     escenario_elegido = sys.argv[2].strip() 
@@ -427,7 +474,7 @@ def resolver_lp(prob):
     except cplex.exceptions.CplexSolverError as e:
         print(f"CPLEX Solver Error: {e}")
 
-def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
+def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plot.png"):
     if not instancia.customer_coords and not instancia.depot_coord:
         print("No coordinates available to plot solution.")
         return
@@ -453,19 +500,28 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
             label_suffix += "R"
         if instancia.exclusivos[client_id] == 1:
             marker = 'X' 
-            color = 'magenta' if client_id in instancia.refrigerados else 'orange'
+            color = 'magenta' if instancia.refrigerados[client_id] == 1 else 'orange' # Corrected color logic for exclusive and refrigerated
             label_suffix += "E"
         
         plt.scatter(coord[0], coord[1], c=color, marker=marker, s=70, label=f'Cliente {client_id} {label_suffix}' if i < 5 else None, zorder=5) # Label first few
         plt.text(coord[0] + 0.1, coord[1] + 0.1, str(client_id))
 
-    # Plot camino de la solucion
-    for u, v in solution_path: 
+    # Plot truck path
+    for u, v in truck_path: 
         coord_u = all_coords[u]
         coord_v = all_coords[v]
         if coord_u and coord_v:
             plt.arrow(coord_u[0], coord_u[1], coord_v[0] - coord_u[0], coord_v[1] - coord_u[1],
-                      head_width=0.2, head_length=0.3, fc='gray', ec='gray', length_includes_head=True, zorder=1)
+                      head_width=0.2, head_length=0.3, fc='gray', ec='gray', length_includes_head=True, zorder=5, label='Truck Path' if not plt.gca().get_legend_handles_labels()[1] else None)
+
+    # Plot biker path
+    for u, v in biker_path:
+        coord_u = all_coords[u]
+        coord_v = all_coords[v]
+        if coord_u and coord_v:
+            plt.arrow(coord_u[0], coord_u[1], coord_v[0] - coord_u[0], coord_v[1] - coord_u[1],
+                      head_width=0.2, head_length=0.3, fc='green', ec='green', linestyle='dashed', length_includes_head=True, zorder=2, label='Biker Path' if not plt.gca().get_legend_handles_labels()[1] else None)
+
 
     plt.title("Ruta de la Solución")
     plt.xlabel("Coordenada X")
@@ -475,7 +531,7 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
         plt.ylim(-1, instancia.grid_length + 1)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True)
-    plt.legend() # Can get crowded, enable if needed
+    plt.legend() 
     plt.savefig(filename)
     print(f"Gráfico de la solución guardado en: {filename}")
     plt.show()
@@ -486,10 +542,10 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
     
     # Statuses for which a feasible MIP solution should be available for plotting
     plotworthy_statuses = [
-        prob.solution.status.MIP_optimal,             # 101
-        prob.solution.status.MIP_feasible,            # 102 (e.g. optimal within tolerance, or just feasible)
-        prob.solution.status.MIP_time_limit_feasible, # 108
-        prob.solution.status.MIP_abort_feasible       # 110
+        prob.solution.status.MIP_optimal,
+        prob.solution.status.MIP_feasible,
+        prob.solution.status.MIP_time_limit_feasible,
+        prob.solution.status.MIP_abort_feasible
     ]
 
     if solution_status in plotworthy_statuses: 
@@ -500,45 +556,47 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
         print("\nEstado de la solucion: ", prob.solution.get_status_string())
         print("Valor de la funcion objetivo: ", prob.solution.get_objective_value())
         
-        print("\nVariables con valor > tolerancia (", tolerance, ") o u_ variables:") # Adjusted print condition slightly
-        active_path = []
+        print("\nVariables con valor > tolerancia (", tolerance, ") o variables de estado (u_, z_, r_):")
+        truck_path = []
+        biker_path = []
         num_total_nodes = instancia.cant_clientes + 1
 
         for i in range(len(variable_names)):
-            # Print u_ variables regardless of tolerance for MTZ inspection, others if > tolerance
-            if solution_values[i] > tolerance or variable_names[i].startswith("u_"): 
-                # The original print logic for u_ variables (adding 1) might be specific to your interpretation.
-                # Keeping it as is for now.
-                value_to_print = solution_values[i]
-                if not variable_names[i].startswith("x_") and not variable_names[i].startswith("y_") and not variable_names[i].startswith("z_") and not variable_names[i].startswith("r_"): # e.g. for u_
-                    value_to_print = solution_values[i] # Or solution_values[i]+1 if that was intended for u_
-                
-                # Original logic for printing u_ variables was adding 1. Let's refine this.
-                # If u_ variables are 0-indexed for depot and 1..N for clients, printing as is should be fine.
-                # The +1 might have been for a specific display reason.
-                # For now, let's print the raw value for u_ and other non-x variables.
-                # The original: solution_values[i] if variable_names[i].startswith('x_') else solution_values[i]+1 
-                # This was too broad. Let's be more specific or just print raw values.
-                # For simplicity, printing raw value:
-                print(f"  {variable_names[i]} = {solution_values[i]}")
+            var_name = variable_names[i]
+            var_value = solution_values[i]
 
-                if variable_names[i].startswith("x_") and solution_values[i] > tolerance : # Ensure x_ variable is actually selected
+            # Print u_, z_, r_ variables, and x_, y_ if > tolerance
+            if var_value > tolerance or var_name.startswith("u_") or var_name.startswith("z_") or var_name.startswith("r_"):
+                print(f"  {var_name} = {var_value}")
+
+                if var_name.startswith("x_") and var_value > tolerance:
                     try:
-                        parts = variable_names[i].split('_')
+                        parts = var_name.split('_')
                         u_node = int(parts[1])
                         v_node = int(parts[2])
                         if 0 <= u_node < num_total_nodes and 0 <= v_node < num_total_nodes:
-                             active_path.append((u_node, v_node))
-                        else: # Should not happen if variables are defined correctly
+                             truck_path.append((u_node, v_node))
+                        else:
                             print(f"    Warning: Parsed node ID out of range for x_ variable. u={u_node}, v={v_node}. Max expected index is {num_total_nodes - 1}.")
                     except (IndexError, ValueError) as e:
-                        print(f"    Warning: Could not parse path from variable {variable_names[i]}: {e}")
+                        print(f"    Warning: Could not parse path from variable {var_name}: {e}")
+                elif var_name.startswith("y_") and var_value > tolerance:
+                    try:
+                        parts = var_name.split('_')
+                        u_node = int(parts[1])
+                        v_node = int(parts[2])
+                        if 0 <= u_node < num_total_nodes and 0 <= v_node < num_total_nodes:
+                             biker_path.append((u_node, v_node))
+                        else:
+                            print(f"    Warning: Parsed node ID out of range for y_ variable. u={u_node}, v={v_node}. Max expected index is {num_total_nodes - 1}.")
+                    except (IndexError, ValueError) as e:
+                        print(f"    Warning: Could not parse path from variable {var_name}: {e}")
         
-        if active_path:
-            plot_filename = "solucion_ruta.png" 
-            plot_solution_path(instancia, active_path, filename=plot_filename)
+        if truck_path or biker_path:
+            plot_filename = sys.argv[3].strip() 
+            plot_solution_path(instancia, truck_path, biker_path, filename=plot_filename)
         else:
-            print("No se encontraron arcos activos (x_i_j > tolerance) en la solución para graficar.")
+            print("No se encontraron arcos activos (x_i_j > tolerance o y_i_j > tolerance) en la solución para graficar.")
 
     else:
         print("No se encontro una solucion optima o factible para graficar.")
@@ -552,7 +610,7 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
 
 def main():
     if len(sys.argv) < 3:
-        print("Uso: python main.py <archivo_instancia> <escenario>")
+        print("Uso: python main.py <archivo_instancia> <escenario> <nombre_grafico>")
         print("Escenarios disponibles: 'actual', 'bici'")
         sys.exit(1)
     
