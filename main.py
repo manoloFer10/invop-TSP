@@ -252,9 +252,16 @@ def modelo_con_bici(prob, instancia):
         lower_bounds.append(0.0)
         upper_bounds.append(int(instancia.cant_clientes)) 
         obj_coeffs.append(0.0) # u_i no están en la f obj
-        
+
+        # r_i variables 
+        var_names.append(f"r_{i}")
+        var_types.append(prob.variables.type.integer) 
+        lower_bounds.append(0.0)
+        upper_bounds.append(instancia.cant_clientes) 
+        obj_coeffs.append(0.0) # r_i no están en la f obj
+
         if i == 0: continue
-    
+
         # z_i variables 
         var_names.append(f"z_{i}")
         var_types.append(prob.variables.type.binary) 
@@ -262,12 +269,7 @@ def modelo_con_bici(prob, instancia):
         upper_bounds.append(1.0) 
         obj_coeffs.append(0.0) # z_i no están en la f obj
 
-        # r_i variables 
-        var_names.append(f"r_{i}")
-        var_types.append(prob.variables.type.integer) 
-        lower_bounds.append(0.0)
-        upper_bounds.append(1.0) 
-        obj_coeffs.append(0.0) # z_i no están en la f obj
+        
 
     agregar_variables(prob, var_names, var_types, lower_bounds, upper_bounds, obj_coeffs)    
 
@@ -297,19 +299,19 @@ def modelo_con_bici(prob, instancia):
     # Cada cliente es visitado exactamente una vez
     for k in range(1, num_total_nodes): 
         # A las demás ciudades se llega en camión o bici
-        vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{k}_{i}" for i in range(num_total_nodes) if i != k]
+        vars_in = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"y_{i}_{k}" for i in range(num_total_nodes) if i != k]
         coeffs_in = [1.0] * len(vars_in) 
         constraints_data.append({'vars': vars_in, 'coeffs': coeffs_in, 'sense': 'E', 'rhs': 1.0, 'name': f"se_llega_{k}"})
 
         # A la ciudad k se llega en camión
-        # sum_i (x_i_j) = z_i for i = 1...N <==> sum_i (x_i_j) - z_i = 0
-        vars_out = [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k] + [f"z_{k}"]
+        # sum_i (x_i_j) = z_j for j = 1...N <==> sum_i (x_i_j) - z_j = 0
+        vars_out = [f"x_{i}_{k}" for i in range(num_total_nodes) if i != k] + [f"z_{k}"]
         coeffs_out = [1.0] * (len(vars_out)-1) + [-1.0]
         constraints_data.append({'vars': vars_out, 'coeffs': coeffs_out, 'sense': 'E', 'rhs': 0.0, 'name': f"sale_de_{k}"})
 
         # Si llegué a k en camión, me fui en camión
-        # z_j <= sum_j(x_i_j) <=> z_j - sum_j(x_i_j) <= 0
-        vars_camion_inout = [f'z_{k}'] + [f"x_{k}_{i}" for i in range(num_total_nodes) if i != k]
+        # z_i <= sum_j(x_i_j) <=> z_i - sum_j(x_i_j) <= 0
+        vars_camion_inout = [f'z_{k}'] + [f"x_{k}_{j}" for j in range(num_total_nodes) if j != k]
         coeffs_camion_inout = [1.0] + [-1.0] * (len(vars_camion_inout)-1)
         constraints_data.append({'vars': vars_camion_inout, 'coeffs': coeffs_camion_inout, 'sense': 'L', 'rhs': 0.0, 'name': f"camion_inout_{k}"})
 
@@ -322,11 +324,14 @@ def modelo_con_bici(prob, instancia):
         # y_i_j puede activarse si está a distancia permitida
         # c_i_j * y_i_j <= d_max
         for j in range(num_total_nodes):
-            if k == j or instancia.distancias[k][j] > instancia.d_max: # no puedo ir en bici si la distancia es mayor a d_max
-                continue
-            vars_y = [f"y_{k}_{j}"]
-            coeffs_y = [instancia.distancias[k][j]]
-            constraints_data.append({'vars': vars_y, 'coeffs': coeffs_y, 'sense': 'L', 'rhs': instancia.d_max, 'name': f"distancia_permitida_{i}_{j}"})
+            if j != 0 and j != k: # No se permite el reparto al depósito ni se reparten a sí mismos
+                constraints_data.append({
+                    'vars': [f"y_{k}_{j}"],
+                    'coeffs': [float(instancia.distancias[k][j])],
+                    'sense': 'L',
+                    'rhs': float(instancia.d_max),
+                    'name': f"distancia_perm_y_{k}_{j}"
+                })
 
         # la cant de repartidores en i es mayor a la cantidad de refrigerados
         # sum_j(refrigerados_j * y_i_j) <= r_i  <==> sum_j(refrigerados_j * y_i_j) - r_i <= 0 
@@ -356,7 +361,7 @@ def modelo_con_bici(prob, instancia):
         vars_z_u = [f"z_{i}", f"u_{i}"]
         coeffs_z_u = [1.0, -1.0]
         constraints_data.append({'vars': vars_z_u, 'coeffs': coeffs_z_u, 'sense': 'L', 'rhs': 0.0, 'name': f"z_u_{i}"})
-        coeffs_z_u_mtz = [int(instancia.cant_clientes - 1), -1.0]
+        coeffs_z_u_mtz = [int(num_total_nodes - 1), -1.0]
         constraints_data.append({'vars': vars_z_u, 'coeffs': coeffs_z_u_mtz, 'sense': 'G', 'rhs': 0.0, 'name': f"z_u_mtz_{i}"})
 
         # Se activa la restricción del orden de caminos si el camión pasa por las dos ciudades
@@ -368,8 +373,8 @@ def modelo_con_bici(prob, instancia):
             if i == j:
                 continue
             vars_mtz = [f"u_{i}", f"u_{j}", f"x_{i}_{j}", f"z_{i}", f"z_{j}"]
-            coef_mtz = [1.0, -1.0, int(instancia.cant_clientes - 1), int(instancia.cant_clientes - 1), int(instancia.cant_clientes - 1)]
-            constraints_data.append({'vars': vars_mtz, 'coeffs': coef_mtz, 'sense': 'L', 'rhs': 3 * instancia.cant_clientes - 5, 'name': f"mtz_{i}_{j}"})
+            coef_mtz = [1.0, -1.0, int(num_total_nodes - 1), int(num_total_nodes - 1), int(num_total_nodes - 1)]
+            constraints_data.append({'vars': vars_mtz, 'coeffs': coef_mtz, 'sense': 'L', 'rhs': 3 * num_total_nodes - 1 - 1, 'name': f"mtz_{i}_{j}"})
 
                         
     #Agrego las restricciones
@@ -405,6 +410,15 @@ def armar_lp(prob, instancia):
 def resolver_lp(prob): 
     prob.objective.set_sense(prob.objective.sense.minimize) 
 
+    # Try to improve the best bound more aggressively
+    prob.parameters.emphasis.mip.set(3) # 3 = MIPEmphasisBestBound
+
+    # Increase effort for MIP heuristics (might find better integer solutions faster)
+    prob.parameters.mip.strategy.heuristiceffort.set(2.0) # Default is 1.0
+
+    # Time limit
+    prob.parameters.timelimit.set(60)  # Set a time limit of 60 seconds
+
     print("Solving the problem...")
     try:
         prob.solve()
@@ -429,15 +443,15 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
 
     # Plot clientes
     for i, coord in enumerate(instancia.customer_coords):
-        client_id = i + 1 
+        client_id = i  
         color = 'blue'
         marker = 'o'
         label_suffix = ""
 
-        if client_id in instancia.refrigerados:
+        if instancia.refrigerados[client_id] == 1:
             color = 'cyan'
             label_suffix += "R"
-        if client_id in instancia.exclusivos:
+        if instancia.exclusivos[client_id] == 1:
             marker = 'X' 
             color = 'magenta' if client_id in instancia.refrigerados else 'orange'
             label_suffix += "E"
@@ -468,10 +482,17 @@ def plot_solution_path(instancia, solution_path, filename="solution_plot.png"):
 
 
 def mostrar_solucion(prob, instancia, tolerance=1e-6):
-    if prob.solution.get_status() in [prob.solution.status.optimal, 
-                                      prob.solution.status.optimal_tolerance,
-                                      prob.solution.status.MIP_optimal,
-                                      prob.solution.status.optimal_infeasible]: 
+    solution_status = prob.solution.get_status()
+    
+    # Statuses for which a feasible MIP solution should be available for plotting
+    plotworthy_statuses = [
+        prob.solution.status.MIP_optimal,             # 101
+        prob.solution.status.MIP_feasible,            # 102 (e.g. optimal within tolerance, or just feasible)
+        prob.solution.status.MIP_time_limit_feasible, # 108
+        prob.solution.status.MIP_abort_feasible       # 110
+    ]
+
+    if solution_status in plotworthy_statuses: 
         
         solution_values = prob.solution.get_values()
         variable_names = prob.variables.get_names()
@@ -479,32 +500,54 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
         print("\nEstado de la solucion: ", prob.solution.get_status_string())
         print("Valor de la funcion objetivo: ", prob.solution.get_objective_value())
         
-        print("\nVariables con valor > tolerancia (", tolerance, "):")
+        print("\nVariables con valor > tolerancia (", tolerance, ") o u_ variables:") # Adjusted print condition slightly
         active_path = []
         num_total_nodes = instancia.cant_clientes + 1
 
         for i in range(len(variable_names)):
-            if solution_values[i] > tolerance or variable_names[i].startswith("u_"):
-                print(f"  {variable_names[i]} = {solution_values[i] if variable_names[i].startswith('x_') else solution_values[i]+1 }")
-                if variable_names[i].startswith("x_"):
+            # Print u_ variables regardless of tolerance for MTZ inspection, others if > tolerance
+            if solution_values[i] > tolerance or variable_names[i].startswith("u_"): 
+                # The original print logic for u_ variables (adding 1) might be specific to your interpretation.
+                # Keeping it as is for now.
+                value_to_print = solution_values[i]
+                if not variable_names[i].startswith("x_") and not variable_names[i].startswith("y_") and not variable_names[i].startswith("z_") and not variable_names[i].startswith("r_"): # e.g. for u_
+                    value_to_print = solution_values[i] # Or solution_values[i]+1 if that was intended for u_
+                
+                # Original logic for printing u_ variables was adding 1. Let's refine this.
+                # If u_ variables are 0-indexed for depot and 1..N for clients, printing as is should be fine.
+                # The +1 might have been for a specific display reason.
+                # For now, let's print the raw value for u_ and other non-x variables.
+                # The original: solution_values[i] if variable_names[i].startswith('x_') else solution_values[i]+1 
+                # This was too broad. Let's be more specific or just print raw values.
+                # For simplicity, printing raw value:
+                print(f"  {variable_names[i]} = {solution_values[i]}")
+
+                if variable_names[i].startswith("x_") and solution_values[i] > tolerance : # Ensure x_ variable is actually selected
                     try:
                         parts = variable_names[i].split('_')
                         u_node = int(parts[1])
                         v_node = int(parts[2])
                         if 0 <= u_node < num_total_nodes and 0 <= v_node < num_total_nodes:
                              active_path.append((u_node, v_node))
+                        else: # Should not happen if variables are defined correctly
+                            print(f"    Warning: Parsed node ID out of range for x_ variable. u={u_node}, v={v_node}. Max expected index is {num_total_nodes - 1}.")
                     except (IndexError, ValueError) as e:
                         print(f"    Warning: Could not parse path from variable {variable_names[i]}: {e}")
         
         if active_path:
-            plot_filename = "solucion_ruta.png" # You can make this dynamic from input filename
+            plot_filename = "solucion_ruta.png" 
             plot_solution_path(instancia, active_path, filename=plot_filename)
         else:
-            print("No se encontraron arcos activos en la solución para graficar.")
+            print("No se encontraron arcos activos (x_i_j > tolerance) en la solución para graficar.")
 
     else:
-        print("No se encontro una solucion optima o factible.")
+        print("No se encontro una solucion optima o factible para graficar.")
         print("Estado de la solucion: ", prob.solution.get_status_string())
+        # If an objective value is available (e.g. for infeasible, unbounded), print it
+        try:
+            print("Valor (si disponible): ", prob.solution.get_objective_value())
+        except cplex.exceptions.CplexError:
+            pass
 
 
 def main():
