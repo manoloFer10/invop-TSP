@@ -1,0 +1,5 @@
+Scenario,ObjectiveValue,SolveTimeSeconds,SolutionStatus
+actual,79.0,0.4165,integer optimal solution
+bici,44.0,4.3746,integer optimal solution
+entregas,44.0,4.2350,integer optimal solution
+si_o_si,59.0,1.3661,integer optimal solution
