@@ -1,11 +1,15 @@
 import sys
 import cplex
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
+import os
+import time
+import csv
 
-TOLERANCE =10e-6 
+TOLERANCE = 10e-6
 
 class InstanciaRecorridoMixto:
     def __init__(self):
+        self.filename = "" # Added to store the input filename
         self.cant_clientes = 0
         self.costo_repartidor = 0
         self.d_max = 0
@@ -20,6 +24,7 @@ class InstanciaRecorridoMixto:
         self.costos = []        
 
     def leer_datos(self,filename):
+        self.filename = filename # Store the filename
         f = open(filename)
 
         self.cant_clientes = int(f.readline())
@@ -455,7 +460,8 @@ def armar_lp(prob, instancia):
     prob.write('recorridoMixto.lp')
 
 def resolver_lp(prob): 
-    prob.objective.set_sense(prob.objective.sense.minimize) 
+    # Objective sense is set before calling this function
+    # prob.objective.set_sense(prob.objective.sense.minimize) 
 
     # Try to improve the best bound more aggressively
     prob.parameters.emphasis.mip.set(3) # 3 = MIPEmphasisBestBound
@@ -467,12 +473,34 @@ def resolver_lp(prob):
     prob.parameters.timelimit.set(60)  # Set a time limit of 60 seconds
 
     print("Solving the problem...")
+    start_time = time.time()
+    objective_value = float('nan')
+    solution_status_str = "Not Solved"
+    
     try:
         prob.solve()
-        print("Solution status: ", prob.solution.get_status_string())
-        print("Solution value: ", prob.solution.get_objective_value())
+        solve_time = time.time() - start_time
+        solution_status_str = prob.solution.get_status_string()
+        
+        # Check if a feasible solution was found
+        if prob.solution.get_status() in [
+            prob.solution.status.MIP_optimal,
+            prob.solution.status.MIP_feasible,
+            prob.solution.status.MIP_time_limit_feasible,
+            prob.solution.status.MIP_abort_feasible
+        ]:
+            objective_value = prob.solution.get_objective_value()
+        
+        print(f"Solution status: {solution_status_str}")
+        print(f"Solution value: {objective_value}")
+        print(f"Solve time: {solve_time:.4f} seconds")
+
     except cplex.exceptions.CplexSolverError as e:
+        solve_time = time.time() - start_time
         print(f"CPLEX Solver Error: {e}")
+        solution_status_str = f"Solver Error: {e}"
+    
+    return objective_value, solve_time, solution_status_str
 
 def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plot.png"):
     if not instancia.customer_coords and not instancia.depot_coord:
@@ -575,10 +603,9 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
     plt.show()
 
 
-def mostrar_solucion(prob, instancia, tolerance=1e-6):
-    solution_status = prob.solution.get_status()
+def mostrar_solucion(prob, instancia, output_folder_path, scenario_name, tolerance=1e-6):
+    solution_status_code = prob.solution.get_status()
     
-    # Statuses for which a feasible MIP solution should be available for plotting
     plotworthy_statuses = [
         prob.solution.status.MIP_optimal,
         prob.solution.status.MIP_feasible,
@@ -586,11 +613,15 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
         prob.solution.status.MIP_abort_feasible
     ]
 
-    if solution_status in plotworthy_statuses: 
+    base_instance_name = os.path.splitext(os.path.basename(instancia.filename))[0]
+    plot_filename = os.path.join(output_folder_path, f"{base_instance_name}_{scenario_name}_solution.png")
+
+    if solution_status_code in plotworthy_statuses: 
         solution_values = prob.solution.get_values()
         variable_names = prob.variables.get_names()
         
-        print("\nEstado de la solucion: ", prob.solution.get_status_string())
+        print(f"\nScenario: {scenario_name}")
+        print("Estado de la solucion: ", prob.solution.get_status_string())
         print("Valor de la funcion objetivo: ", prob.solution.get_objective_value())
         
         print("\nVariables con valor > tolerancia (", tolerance, ") o variables de estado (u_, z_, r_):")
@@ -602,7 +633,6 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
             var_name = variable_names[i]
             var_value = solution_values[i]
 
-            # Print u_, z_, r_ variables, and x_, y_ if > tolerance
             if var_value > tolerance or var_name.startswith("u_") or var_name.startswith("z_") or var_name.startswith("r_"):
                 print(f"  {var_name} = {var_value}")
 
@@ -630,36 +660,91 @@ def mostrar_solucion(prob, instancia, tolerance=1e-6):
                         print(f"    Warning: Could not parse path from variable {var_name}: {e}")
         
         if truck_path or biker_path:
-            plot_filename = sys.argv[3].strip() 
+            # The plot_filename is now constructed above and passed correctly
             plot_solution_path(instancia, truck_path, biker_path, filename=plot_filename)
         else:
             print("No se encontraron arcos activos (x_i_j > tolerance o y_i_j > tolerance) en la solución para graficar.")
 
     else:
+        print(f"\nScenario: {scenario_name}")
         print("No se encontro una solucion optima o factible para graficar.")
         print("Estado de la solucion: ", prob.solution.get_status_string())
-        # If an objective value is available (e.g. for infeasible, unbounded), print it
         try:
             print("Valor (si disponible): ", prob.solution.get_objective_value())
         except cplex.exceptions.CplexError:
             pass
 
-
 def main():
-    if len(sys.argv) < 3:
-        print("Uso: python main.py <archivo_instancia> <escenario> <nombre_grafico>")
-        print("Escenarios disponibles: 'actual', 'bici'")
+    if len(sys.argv) < 2:
+        print("Uso: python main.py <archivo_instancia>")
         sys.exit(1)
     
-    instancia = cargar_instancia()
+    instance_file_path = sys.argv[1].strip()
     
-    prob = cplex.Cplex()
-    
-    armar_lp(prob,instancia)
+    instancia = cargar_instancia() # This will also set instancia.filename via leer_datos
 
-    resolver_lp(prob) 
+    base_instance_name = os.path.splitext(os.path.basename(instance_file_path))[0]
+    output_folder_path = f"{base_instance_name}_results"
 
-    mostrar_solucion(prob,instancia)
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+        print(f"Created output folder: {output_folder_path}")
+
+    escenarios_map = {
+        'actual': modelo_actual,
+        'bici': modelo_con_bici,
+        'entregas': modelo_con_bici_entregas,
+        'si_o_si': modelo_con_bici_si_o_si,
+    }
+
+    summary_data = []
+
+    for scenario_name, model_function in escenarios_map.items():
+        print(f"\n--- Running scenario: {scenario_name} ---")
+        prob = cplex.Cplex()
+        
+        # Call the specific model function to add variables and constraints
+        model_function(prob, instancia)
+
+        # Set objective sense (common for all models)
+        prob.objective.set_sense(prob.objective.sense.minimize)
+
+        # Write the LP file for the current scenario
+        lp_filename = os.path.join(output_folder_path, f"{base_instance_name}_{scenario_name}.lp")
+        try:
+            prob.write(lp_filename)
+            print(f"LP model for scenario {scenario_name} written to {lp_filename}")
+        except cplex.exceptions.CplexError as e:
+            print(f"Error writing LP file for {scenario_name}: {e}")
+
+        # Solve the problem
+        obj_val, s_time, sol_status = resolver_lp(prob)
+        
+        summary_data.append({
+            'Scenario': scenario_name,
+            'ObjectiveValue': obj_val if not isinstance(obj_val, float) or (not cplex.infinity == obj_val and not (obj_val != obj_val)) else str(obj_val), # handle NaN and Inf for CSV
+            'SolveTimeSeconds': f"{s_time:.4f}",
+            'SolutionStatus': sol_status
+        })
+
+        # Display solution and plot (if feasible)
+        mostrar_solucion(prob, instancia, output_folder_path, scenario_name)
+        
+        # Clean up CPLEX problem object for the next iteration
+        del prob
+
+    # Write summary CSV
+    csv_file_path = os.path.join(output_folder_path, f"{base_instance_name}_summary.csv")
+    csv_columns = ['Scenario', 'ObjectiveValue', 'SolveTimeSeconds', 'SolutionStatus']
+    try:
+        with open(csv_file_path, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=csv_columns)
+            writer.writeheader()
+            for data_row in summary_data:
+                writer.writerow(data_row)
+        print(f"\nSummary written to {csv_file_path}")
+    except IOError:
+        print(f"I/O error writing CSV to {csv_file_path}")
 
 if __name__ == '__main__':
     main()
