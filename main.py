@@ -459,18 +459,24 @@ def armar_lp(prob, instancia):
     # Escribir el lp a archivo
     prob.write('recorridoMixto.lp')
 
-def resolver_lp(prob): 
-    # Objective sense is set before calling this function
-    # prob.objective.set_sense(prob.objective.sense.minimize) 
+def resolver_lp(prob, strategy_params=None): 
+  
+    prob.parameters.timelimit.set(300)  # Cota para el tiempo, pobre de mi compu si no
 
-    # Try to improve the best bound more aggressively
-    prob.parameters.emphasis.mip.set(3) # 3 = MIPEmphasisBestBound
-
-    # Increase effort for MIP heuristics (might find better integer solutions faster)
-    prob.parameters.mip.strategy.heuristiceffort.set(2.0) # Default is 1.0
-
-    # Time limit
-    prob.parameters.timelimit.set(60)  # Set a time limit of 60 seconds
+    # Parámetros de estrategia
+    if strategy_params:
+        print(f"Applying strategy parameters: {strategy_params}")
+        if 'emphasis.mip' in strategy_params:
+            prob.parameters.emphasis.mip.set(strategy_params['emphasis.mip'])
+        if 'mip.strategy.heuristiceffort' in strategy_params:
+            prob.parameters.mip.strategy.heuristiceffort.set(strategy_params['mip.strategy.heuristiceffort'])
+        if 'mip.strategy.nodeselect' in strategy_params:
+            prob.parameters.mip.strategy.nodeselect.set(strategy_params['mip.strategy.nodeselect'])
+        if 'mip.strategy.variableselect' in strategy_params:
+            prob.parameters.mip.strategy.variableselect.set(strategy_params['mip.strategy.variableselect'])
+    else: # Si no hay estrategia... un default
+        prob.parameters.emphasis.mip.set(0) 
+        prob.parameters.mip.strategy.heuristiceffort.set(1.0)
 
     print("Solving the problem...")
     start_time = time.time()
@@ -481,8 +487,7 @@ def resolver_lp(prob):
         prob.solve()
         solve_time = time.time() - start_time
         solution_status_str = prob.solution.get_status_string()
-        
-        # Check if a feasible solution was found
+
         if prob.solution.get_status() in [
             prob.solution.status.MIP_optimal,
             prob.solution.status.MIP_feasible,
@@ -543,7 +548,7 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
             marker = 'X'
             legend_category = "Cliente Exclusivo"
             point_text_suffix.append("E")
-        else: # Regular client
+        else: 
             color = 'blue'
             marker = 'o'
             legend_category = "Cliente"
@@ -556,7 +561,7 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
         suffix_str = ",".join(point_text_suffix)
         plt.text(coord[0] + 0.1, coord[1] + 0.1, f"{client_id}{f' ({suffix_str})' if suffix_str else ''}")
 
-    # Plot truck path
+    # Plot camino camión
     truck_label_added = False
     for u, v in truck_path: 
         coord_u = all_coords[u]
@@ -569,7 +574,7 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
             plt.arrow(coord_u[0], coord_u[1], coord_v[0] - coord_u[0], coord_v[1] - coord_u[1],
                       head_width=0.2, head_length=0.3, fc='gray', ec='gray', length_includes_head=True, zorder=3, label=label_to_use)
 
-    # Plot biker path
+    # Plot camino bici
     biker_label_added = False
     for u, v in biker_path:
         coord_u = all_coords[u]
@@ -592,10 +597,9 @@ def plot_solution_path(instancia, truck_path, biker_path, filename="solution_plo
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True)
     
-    # Filter out None labels before creating legend
     handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles)) # Remove duplicate labels if any, keeping the first instance
-    if by_label: # Check if there's anything to show in the legend
+    by_label = dict(zip(labels, handles)) 
+    if by_label: 
         plt.legend(by_label.values(), by_label.keys())
 
     plt.savefig(filename)
@@ -660,7 +664,6 @@ def mostrar_solucion(prob, instancia, output_folder_path, scenario_name, toleran
                         print(f"    Warning: Could not parse path from variable {var_name}: {e}")
         
         if truck_path or biker_path:
-            # The plot_filename is now constructed above and passed correctly
             plot_solution_path(instancia, truck_path, biker_path, filename=plot_filename)
         else:
             print("No se encontraron arcos activos (x_i_j > tolerance o y_i_j > tolerance) en la solución para graficar.")
@@ -681,7 +684,7 @@ def main():
     
     instance_file_path = sys.argv[1].strip()
     
-    instancia = cargar_instancia() # This will also set instancia.filename via leer_datos
+    instancia = cargar_instancia() 
 
     base_instance_name = os.path.splitext(os.path.basename(instance_file_path))[0]
     output_folder_path = f"{base_instance_name}_results"
@@ -697,19 +700,45 @@ def main():
         'si_o_si': modelo_con_bici_si_o_si,
     }
 
+    strategies = [
+        {
+            'name': 'BalancedDefaults',
+            'params': {
+                'emphasis.mip': 0, # CPX_MIPEMPHASIS_BALANCED
+                'mip.strategy.heuristiceffort': 1.0, # Default
+                'mip.strategy.nodeselect': 1, # Default: Best-bound search
+                'mip.strategy.variableselect': 0 # Default: Automatic
+            }
+        },
+        {
+            'name': 'FeasibilityFocus',
+            'params': {
+                'emphasis.mip': 1, # CPX_MIPEMPHASIS_FEASIBILITY
+                'mip.strategy.heuristiceffort': 2.0, # Increased heuristic effort
+                'mip.strategy.nodeselect': 2, # Best-estimate search
+                'mip.strategy.variableselect': 0 # Automatic
+            }
+        },
+        {
+            'name': 'OptimalityStrongBranch',
+            'params': {
+                'emphasis.mip': 2, # CPX_MIPEMPHASIS_OPTIMALITY
+                'mip.strategy.heuristiceffort': 1.0, # Default
+                'mip.strategy.nodeselect': 1, # Best-bound
+                'mip.strategy.variableselect': 3 # Strong branching
+            }
+        }
+    ]
+
     summary_data = []
 
     for scenario_name, model_function in escenarios_map.items():
         print(f"\n--- Running scenario: {scenario_name} ---")
-        prob = cplex.Cplex()
         
-        # Call the specific model function to add variables and constraints
+        prob = cplex.Cplex()
         model_function(prob, instancia)
-
-        # Set objective sense (common for all models)
         prob.objective.set_sense(prob.objective.sense.minimize)
 
-        # Write the LP file for the current scenario
         lp_filename = os.path.join(output_folder_path, f"{base_instance_name}_{scenario_name}.lp")
         try:
             prob.write(lp_filename)
@@ -717,25 +746,24 @@ def main():
         except cplex.exceptions.CplexError as e:
             print(f"Error writing LP file for {scenario_name}: {e}")
 
-        # Solve the problem
-        obj_val, s_time, sol_status = resolver_lp(prob)
+        for strategy_config in strategies:
+            print(f"--- Applying Strategy: {strategy_config['name']} for scenario: {scenario_name} ---")
+            
+            # resuelvo con la estrategia dada
+            obj_val, s_time, sol_status = resolver_lp(prob, strategy_config['params']) 
+            
+            summary_data.append({
+                'Scenario': scenario_name,
+                'Strategy': strategy_config['name'],
+                'ObjectiveValue': obj_val if not isinstance(obj_val, float) or (not cplex.infinity == obj_val and not (obj_val != obj_val)) else str(obj_val),
+                'SolveTimeSeconds': f"{s_time:.4f}",
+                'SolutionStatus': sol_status
+            })
         
-        summary_data.append({
-            'Scenario': scenario_name,
-            'ObjectiveValue': obj_val if not isinstance(obj_val, float) or (not cplex.infinity == obj_val and not (obj_val != obj_val)) else str(obj_val), # handle NaN and Inf for CSV
-            'SolveTimeSeconds': f"{s_time:.4f}",
-            'SolutionStatus': sol_status
-        })
-
-        # Display solution and plot (if feasible)
-        mostrar_solucion(prob, instancia, output_folder_path, scenario_name)
-        
-        # Clean up CPLEX problem object for the next iteration
         del prob
 
-    # Write summary CSV
     csv_file_path = os.path.join(output_folder_path, f"{base_instance_name}_summary.csv")
-    csv_columns = ['Scenario', 'ObjectiveValue', 'SolveTimeSeconds', 'SolutionStatus']
+    csv_columns = ['Scenario', 'Strategy', 'ObjectiveValue', 'SolveTimeSeconds', 'SolutionStatus']
     try:
         with open(csv_file_path, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=csv_columns)

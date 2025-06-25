@@ -1,5 +1,13 @@
-Scenario,ObjectiveValue,SolveTimeSeconds,SolutionStatus
-actual,37.0,0.1285,integer optimal solution
-bici,17.0,0.1961,integer optimal solution
-entregas,17.0,0.1572,integer optimal solution
-si_o_si,22.0,0.1536,integer optimal solution
+Scenario,Strategy,ObjectiveValue,SolveTimeSeconds,SolutionStatus
+actual,BalancedDefaults,37.0,0.3063,integer optimal solution
+actual,FeasibilityFocus,37.0,0.0050,integer optimal solution
+actual,OptimalityStrongBranch,37.0,0.0056,integer optimal solution
+bici,BalancedDefaults,17.0,0.1220,integer optimal solution
+bici,FeasibilityFocus,17.0,0.0053,integer optimal solution
+bici,OptimalityStrongBranch,17.0,0.0050,integer optimal solution
+entregas,BalancedDefaults,17.0,0.1182,integer optimal solution
+entregas,FeasibilityFocus,17.0,0.0037,integer optimal solution
+entregas,OptimalityStrongBranch,17.0,0.0041,integer optimal solution
+si_o_si,BalancedDefaults,22.0,0.1866,integer optimal solution
+si_o_si,FeasibilityFocus,22.0,0.0064,integer optimal solution
+si_o_si,OptimalityStrongBranch,22.0,0.0037,integer optimal solution
