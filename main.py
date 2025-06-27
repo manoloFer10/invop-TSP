@@ -349,6 +349,14 @@ def modelo_con_bici(prob, instancia):
                     'rhs': float(instancia.d_max),
                     'name': f"distancia_perm_y_{k}_{j}"
                 })
+        if k != 0:
+            constraints_data.append({
+                        'vars': [f"y_{k}_0"],
+                        'coeffs': [1.0],
+                        'sense': 'E',
+                        'rhs': 0,
+                        'name': f"no_reparto_dep_desde_y_{k}_0"
+                    })
 
         for j in range(num_total_nodes):
             if k == j:
@@ -407,10 +415,10 @@ def modelo_con_bici_entregas(prob, instancia):
     constraints_data = []
     
     # Al menos cuatro entregas
-    # r_i <= 4sum_i(y_i_j) <=> r_i - 4sum_i(y_i_j) <= 0
+    # 4r_i <= sum_i(y_i_j) <=> r_i - 4sum_i(y_i_j) <= 0
     for i in range(num_total_nodes):
         vars_entregas = [f"r_{i}"] + [f"y_{i}_{j}" for j in range(num_total_nodes) if j != i]
-        coeffs_entregas = [1.0] + [-4.0] * (len(vars_entregas) - 1)
+        coeffs_entregas = [4.0] + [-1.0] * (len(vars_entregas) - 1)
         constraints_data.append({'vars': vars_entregas, 'coeffs': coeffs_entregas, 'sense': 'L', 'rhs': 0.0, 'name': f"entregas_min_{i}"})
 
     agregar_restricciones(prob, constraints_data)
@@ -751,6 +759,10 @@ def main():
             
             # resuelvo con la estrategia dada
             obj_val, s_time, sol_status = resolver_lp(prob, strategy_config['params']) 
+            
+            # mostramos solo para  'BalancedDefaults'
+            if strategy_config['name'] == 'BalancedDefaults':
+                mostrar_solucion(prob, instancia, output_folder_path, scenario_name)
             
             summary_data.append({
                 'Scenario': scenario_name,
